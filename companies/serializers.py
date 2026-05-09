@@ -12,13 +12,27 @@ class CompanySerializer(serializers.ModelSerializer):
         
 
 
+# serializers.py
+
+from rest_framework import serializers
+from .models import CompanySettings
+
+
 class CompanySettingsSerializer(serializers.ModelSerializer):
-    company_name = serializers.CharField(source="company.name")
-    email = serializers.EmailField(source="company.email")
-    phone = serializers.CharField(source="company.phone", allow_blank=True)
-    address = serializers.CharField(source="company.address", allow_blank=True)
-    country = serializers.CharField(source="company.country")
-    timezone = serializers.CharField(source="company.timezone")
+    company_name = serializers.CharField(source="organization.name")
+    email = serializers.EmailField(source="organization.email")
+    phone = serializers.CharField(
+        source="organization.phone",
+        allow_blank=True,
+        required=False
+    )
+    address = serializers.CharField(
+        source="organization.address",
+        allow_blank=True,
+        required=False
+    )
+    country = serializers.CharField(source="organization.country")
+    timezone = serializers.CharField(source="organization.timezone")
 
     class Meta:
         model = CompanySettings
@@ -34,24 +48,102 @@ class CompanySettingsSerializer(serializers.ModelSerializer):
         ]
 
     def update(self, instance, validated_data):
-        # 🔹 Update Company fields
-        company_data = validated_data.pop("company", {})
-        company = instance.company
+        # Company data
+        organization_data = validated_data.pop("organization", {})
+        organization = instance.organization
 
-        for attr, value in company_data.items():
-            setattr(company, attr, value)
-        company.save()
+        for attr, value in organization_data.items():
+            setattr(organization, attr, value)
 
-        # 🔹 Update Settings fields
+        organization.save()
+
+        # Settings data
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+
         instance.save()
 
-        return instance        
+        return instance 
  
- 
- 
- 
+# serializers.py
+
+from rest_framework import serializers
+from .models import AttendanceSettings
+
+
+class AttendanceSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AttendanceSettings
+        fields = [
+            "work_hours_per_day",
+            "allow_late_arrival",
+            "late_arrival_grace_minutes",
+            "require_face_verification",
+            "geo_fencing_enabled",
+        ] 
+        
+# serializers.py
+
+from rest_framework import serializers
+from .models import PayrollSettings
+
+
+class PayrollSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PayrollSettings
+        fields = [
+            "payroll_day",
+            "tax_rate",
+            "allow_manual_payslip",
+        ]   
+# serializers.py
+
+from rest_framework import serializers
+from .models import LeaveSettings
+
+
+class LeaveSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LeaveSettings
+        fields = [
+            "default_annual_leave_days",
+            "default_sick_leave_days",
+            "carry_forward_enabled",
+            "max_carry_forward_days",
+            "leave_approval_required",
+        ]     
+        
+# serializers.py
+
+from rest_framework import serializers
+from .models import SystemSettings
+
+
+class SystemSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SystemSettings
+        fields = [
+            "email_notifications_enabled",
+            "allow_self_registration",
+            "maintenance_mode",
+            "session_timeout_minutes",
+        ]                
+ # serializers.py
+
+from rest_framework import serializers
+from .models import WorkLocation
+
+
+class WorkLocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkLocation
+        fields = [
+            "name",
+            "latitude",
+            "longitude",
+            "radius_meters",
+            "is_enabled",
+        ]
 """
  
  {/*

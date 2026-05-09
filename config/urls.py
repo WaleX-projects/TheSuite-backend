@@ -9,7 +9,6 @@ from appsettings.views import CompanySettingsView
 
 from attendance.views import  ShiftViewSet, EmployeeShiftViewSet,register, recognize,AttendanceViewSet,HolidayViewSet
 from leave.views import LeaveTypeViewSet, LeaveRequestViewSet
-from subscriptions.views import PlanViewSet, SubscriptionViewSet
 from notifications.views import NotificationViewSet
 
 router = DefaultRouter()
@@ -34,8 +33,8 @@ router.register(r"leave", LeaveRequestViewSet,basename="leaves")
 
 
 # 💳 Subscriptions
-router.register("plans", PlanViewSet, basename="plan")
-router.register("subscriptions", SubscriptionViewSet, basename="subscription")
+#router.register("plans", PlanViewSet, basename="plan")
+#router.register("subscriptions", SubscriptionViewSet, basename="subscription")
 
 # 🔔 Notifications
 router.register("notifications", NotificationViewSet, basename="notification")
@@ -44,6 +43,7 @@ router.register("notifications", NotificationViewSet, basename="notification")
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include(router.urls)),
+    
     path("api/accounts/", include("accounts.urls")),
     path("api/companies/", include("companies.urls")),
     path('api/register/', register,name="registration"),
@@ -51,6 +51,7 @@ urlpatterns = [
     path('api/accounts/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     # 💰 Payroll
     path('api/', include('payroll.urls')),
+    path('api/', include('subscriptions.urls')),
     # urls.py
     #ai_chat URL
     path('api/chat/',ai_chat,name="chat-ai"),

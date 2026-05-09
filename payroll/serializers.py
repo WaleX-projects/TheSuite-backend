@@ -194,7 +194,8 @@ class PayslipItemSerializer(serializers.ModelSerializer):
 
 class PayslipListSerializer(serializers.ModelSerializer):
     employee_detail = EmployeeMiniSerializer(source="employee", read_only=True)
-
+    items = PayslipItemSerializer(many=True, read_only=True)
+    
     payroll_month = serializers.IntegerField(source="payroll.month", read_only=True)
     payroll_year = serializers.IntegerField(source="payroll.year", read_only=True)
     payroll_status = serializers.CharField(source="payroll.status", read_only=True)
@@ -213,6 +214,7 @@ class PayslipListSerializer(serializers.ModelSerializer):
             "total_allowance",
             "total_deduction",
             "net_salary",
+             "items",
             "created_at",
         ]
     

@@ -6,7 +6,7 @@ from .serializers import EmployeeSerializer,DepartmentSerializer,PositionSeriali
 from accounts.permissions import IsAdminOrHR
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter
-
+from subscriptions.utils import check_employee_limit
 
 # views.py
 import requests
@@ -116,15 +116,32 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return Employee.objects.filter(company=user.company)
 
     def perform_create(self, serializer):
+        
         user = self.request.user
-
+        company = user.company
+        
+        check_employee_limit(company)
+        
+        
         if not user.company and not user.is_superuser:
             raise PermissionDenied("No company assigned")
 
         serializer.save(company=user.company)
         
         
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
         
+        if not serializer.is_valid():
+            print("Validation Errors:", serializer.errors) # This will tell you EXACTLY what's wrong
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        self.perform_update(serializer)
+        return Response(serializer.data)
+    
+            
     @action(detail=True, methods=["post"], url_path="activate")
     def activate(self, request, pk=None):
         try:

@@ -19,7 +19,7 @@ from django.db.models import Count, Q
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.utils import timezone
-
+from subscriptions.utils import require_feature
 # Inside your method:
 
     # ... inside your ViewSet ..
@@ -39,6 +39,9 @@ class AttendanceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        #check of subscription has this feature
+        require_feature(user.company, "attendance")
+        
         today = timezone.now().date() 
         queryset = Attendance.objects.all().order_by("-date")
 
@@ -71,7 +74,8 @@ class AttendanceViewSet(viewsets.ModelViewSet):
     def dashboard(self, request):
         user = self.request.user
         today = date.today()
-        
+        #check of subscription has this feature
+        require_feature(user.company, "attendance")
         # 1. Scope: Only get data for the user's company
         company_employees = Employee.objects.filter(company=user.company)
         total_employee_count = company_employees.count()

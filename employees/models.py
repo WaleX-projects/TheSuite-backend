@@ -86,8 +86,10 @@ class Employee(models.Model):
     
     status = models.CharField(max_length=20, default="active")
     date_deactivate = models.DateField(null=True, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
     
-    
+    # Address can be a simple CharField or a TextField if it's long
+    address = models.TextField(null=True, blank=True)
     def save(self, *args, **kwargs):
         if not self.employee_id:
             # 1. Get the next number for this specific company

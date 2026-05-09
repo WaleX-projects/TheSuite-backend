@@ -23,6 +23,7 @@ from .models import (
     PayrollRun,
     PayrollInput,
     Payslip,
+    EmployeeSalaryOverride
 )
 
 from .serializers import (
@@ -38,7 +39,10 @@ from .serializers import (
     PayslipDetailSerializer,
     AttendanceSerializer,
     HolidaySerializer,
+    EmployeeSalaryOverrideSerializer
 )
+
+
 from attendance.services import AttendanceService
 
 # your payroll engine
@@ -286,6 +290,7 @@ class PayrollRunViewSet(
             })
 
         except Exception as e:
+            print(e)
             return Response({
                 "error": str(e)
             }, status=400)
@@ -312,7 +317,7 @@ class PayrollRunViewSet(
     @action(detail=True, methods=["get"])
     def export_excel(self, request, pk=None):
         payroll = self.get_object()
-
+        print("payroll data for export_excel",payroll)
         wb = Workbook()
         ws = wb.active
         ws.title = "Payroll"
@@ -401,7 +406,31 @@ def employee_payslips(request, employee_id):
 
     return Response(serializer.data)
     
-    
+# apps/payroll/views/salary_views.py  (or wherever you keep payroll views)
+
+  # Adjust import path
+# ==========================================================
+# Employee salary Override VIEW
+# ==========================================================
+
+
+class EmployeeSalaryOverrideViewSet(CompanyScopedMixin, viewsets.ModelViewSet):
+    serializer_class = EmployeeSalaryOverrideSerializer
+    queryset = EmployeeSalaryOverride.objects.all()
+
+    def get_queryset(self):
+        return EmployeeSalaryOverride.objects.filter(
+            employee__company_id=self.company_id()
+        ).select_related('employee', 'component').order_by('-id')
+
+    def perform_create(self, serializer):
+        serializer.save()
+        # No need to manually set company as it's linked via employee
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['company_id'] = self.company_id()
+        return context    
     
     
 # payroll/views.py

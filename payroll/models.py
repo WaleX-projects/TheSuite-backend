@@ -22,7 +22,7 @@ class SalaryComponent(models.Model):
     )
 
     name = models.CharField(max_length=255)
-    component_type = models.CharField(max_length=20, choices=COMPONENT_TYPE)
+    component_type = models.CharField(max_length=20, choices=COMPONENT_TYPE,default="allowance")
 
     is_percentage = models.BooleanField(default=False)
 
@@ -162,16 +162,11 @@ class PayrollRun(models.Model):
 
     def can_edit(self):
         return self.status == "draft"
-
-    def process(self):
-        if self.status != "draft":
-            raise Exception("Only draft payroll can be processed")
-        self.status = "processed"
-        self.save()
-
+        
+    
     def mark_paid(self):
-        if self.status != "processed":
-            raise Exception("Only processed payroll can be marked as paid")
+        if self.status != "draft":
+            raise Exception("Only drafted payroll can be paid")
         self.status = "paid"
         self.save()
 
