@@ -1,8 +1,28 @@
 import uuid
 from django.db import models,transaction
 
+
+
+class IDCounter(models.Model):
+    name = models.CharField(max_length=100, unique=True) # e.g., "AutoSheck"
+    last_value = models.PositiveIntegerField(default=0)
+
+    def next_id(self):
+        with transaction.atomic():
+            # select_for_update() locks the row so two people 
+            # can't get the same number at once
+            counter, created = IDCounter.objects.select_for_update().get_or_create(name=self.name)
+            counter.last_value += 1
+            counter.save()
+            return counter.last_value
+
+
+
+
 class Company(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    company_id = models.CharField(max_length=100, unique=True, editable=False)
+    
     name = models.CharField(max_length=255)
     email = models.EmailField()
     phone = models.CharField(max_length=20, blank=True)
@@ -10,6 +30,22 @@ class Company(models.Model):
     country = models.CharField(max_length=100, default="Nigeria")
     timezone = models.CharField(max_length=50, default="Africa/Lagos")
     created_at = models.DateTimeField(auto_now_add=True)
+    
+    
+    def save(self, *args, **kwargs):
+        if not self.employee_id:
+            # 1. Get the next number for this specific company
+            counter = IDCounter()
+            counter.name = self.name
+            new_number = counter.next_id()
+            
+            # 2. Format it: AutoSheck-0001
+            # :04d ensures the number is at least 4 digits long
+            self.company_id = f"{(self.name).upper()}{new_number:04d}"
+            
+        super().save(*args, **kwargs)
+        
+        
     def __str__(self):
          return self.name
          
@@ -138,15 +174,6 @@ class WorkLocation(models.Model):
 
     def __str__(self):
         return f"{self.organization.name} Work Location"                
-class IDCounter(models.Model):
-    name = models.CharField(max_length=100, unique=True) # e.g., "AutoSheck"
-    last_value = models.PositiveIntegerField(default=0)
 
-    def next_id(self):
-        with transaction.atomic():
-            # select_for_update() locks the row so two people 
-            # can't get the same number at once
-            counter, created = IDCounter.objects.select_for_update().get_or_create(name=self.name)
-            counter.last_value += 1
-            counter.save()
-            return counter.last_value
+
+

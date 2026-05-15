@@ -7,7 +7,7 @@ from employees.views import EmployeeViewSet,DepartmentViewSet,PositionViewSet,Bu
 from appsettings.views import CompanySettingsView
 
 
-from attendance.views import  ShiftViewSet, EmployeeShiftViewSet,register, recognize,AttendanceViewSet,HolidayViewSet
+from attendance.views import  ShiftViewSet, EmployeeShiftViewSet,register, recognize, VerifyLocationView  ,AttendanceViewSet,HolidayViewSet
 from leave.views import LeaveTypeViewSet, LeaveRequestViewSet
 from notifications.views import NotificationViewSet
 
@@ -47,6 +47,7 @@ urlpatterns = [
     path("api/accounts/", include("accounts.urls")),
     path("api/companies/", include("companies.urls")),
     path('api/register/', register,name="registration"),
+    path('api/verify-location/', VerifyLocationView.as_view(),name="location"),
     path('api/recognize/', recognize,name="recognition"),
     path('api/accounts/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     # 💰 Payroll

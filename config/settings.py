@@ -165,7 +165,8 @@ REST_FRAMEWORK = {
 # ============================
 # CORS SETTINGS (Improved for React)
 # ============================
-FRONTEND_URL = "http://51.20.54.232:8000"
+FRONTEND_URL = "http://13.60.26.90:8080"
+
 
 # "https://thesuit.netlify.app"
 

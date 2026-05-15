@@ -1,28 +1,32 @@
-from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
-from .models import Attendance, Shift, EmployeeShift, Holiday
-from .serializers import AttendanceSerializer, ShiftSerializer, EmployeeShiftSerializer,HolidaySerializer
-from .utils import model, read_image, collection,client,is_live
-
-from rest_framework.decorators import api_view,permission_classes
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import AllowAny
-
-from employees.models import Employee 
-
-from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import viewsets, filters
-
+import uuid
+import logging
 from datetime import date
-from django.db.models import Count, Q
-from rest_framework.response import Response
-from rest_framework.decorators import action
-from django.utils import timezone
-from subscriptions.utils import require_feature
-# Inside your method:
 
-    # ... inside your ViewSet ..
+# Django Imports
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from django.utils.timezone import now
+from django.db.models import Count, Q
+
+# Django Filters
+from django_filters.rest_framework import DjangoFilterBackend
+
+# DRF Imports
+from rest_framework import viewsets, filters, status
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.decorators import api_view, permission_classes, action
+from rest_framework.permissions import IsAuthenticated, AllowAny
+
+# Local App Imports (Attendance/Payroll)
+from .models import Attendance, Shift, EmployeeShift, Holiday
+from .serializers import AttendanceSerializer, ShiftSerializer, EmployeeShiftSerializer, HolidaySerializer
+from .utils import model, read_image, collection, client, is_live, calculate_haversine_distance
+
+# External App Imports
+from employees.models import Employee
+from companies.models import Company, WorkLocation
+from subscriptions.utils import require_feature
 
 class AttendanceViewSet(viewsets.ModelViewSet):
     serializer_class = AttendanceSerializer
@@ -48,6 +52,7 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         # ================= ROLE BASED ACCESS =================
         if user.role in ["company_admin", "hr"]:
             queryset = queryset.filter(employee__company=user.company,date=today)
+            print(queryset)
         else:
             queryset = queryset.filter(employee__user=user)
 
@@ -111,83 +116,96 @@ class AttendanceViewSet(viewsets.ModelViewSet):
         return Response(data)
     
             
-        
-        
-class ShiftViewSet(viewsets.ModelViewSet):
-    serializer_class = ShiftSerializer
-    permission_classes = [IsAuthenticated]
-    queryset = Shift.objects.all()
-
-class EmployeeShiftViewSet(viewsets.ModelViewSet):
-    serializer_class = EmployeeShiftSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return EmployeeShift.objects.filter(employee__company=self.request.user.company)
-        
 
 
 
 
-import uuid
-import logging
+
+
+logger = logging.getLogger(__name__)
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework import status
-
-from employees.models import Employee
-from .models import Attendance
-from .utils import model, read_image, collection
-
-logger = logging.getLogger(__name__)
+from django.shortcuts import get_object_or_404
+from django.utils.timezone import now
+import uuid
 
 
+# =========================================================
+# REGISTER FACE
+# =========================================================
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register(request):
     try:
         employee_id = request.data.get("employee_id")
-       
-        file = request.FILES.get("file")
-
+        file = request.FILES.get("image")
+        print("requested data", request.data)
         if not employee_id or not file:
-            return Response({"success": False, "message": "employee_id and file required"}, status=400)
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "employee_id and file required",
+                "data": None
+            }, status=400)
 
-        # -------- validate employee UUID --------
+        # Validate UUID
         try:
             employee_uuid = uuid.UUID(str(employee_id))
         except ValueError:
-            return Response({"success": False, "message": "Invalid employee_id"}, status=400)
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Invalid employee_id",
+                "data": None
+            }, status=400)
 
-        
-        # -------- fetch employee --------
+        # Fetch employee
         try:
             employee = Employee.objects.get(id=employee_uuid)
         except Employee.DoesNotExist:
-            return Response(
-                {"success": False, "message": "Employee not found"},
-                status=404
-            )
-        # -------- image --------
-  
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Employee not found",
+                "data": None
+            }, status=404)
+
+        # Process image
         try:
             img = read_image(file)
-            if not is_live(img):
-               return Response({"message": "Spoof detected"}, status=403)
-        
-            
+
+            # if not is_live(img):
+            #     return Response({
+            #         "success": False,
+            #         "status": "failed",
+            #         "message": "Spoof detected",
+            #         "data": None
+            #     }, status=403)
+
         except Exception:
-            return Response({"success": False, "message": "Invalid image"}, status=400)
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Invalid image",
+                "data": None
+            }, status=400)
 
         faces = model.get(img)
 
         if len(faces) != 1:
-            return Response({"success": False, "message": "Exactly one face required"}, status=400)
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Exactly one face required",
+                "data": None
+            }, status=400)
 
         embedding = faces[0].embedding.tolist()
 
-        # -------- duplicate check --------
+        # Duplicate check
         try:
             results = collection.query(
                 query_embeddings=[embedding],
@@ -196,198 +214,316 @@ def register(request):
 
             if results.get("distances") and results["distances"][0]:
                 if results["distances"][0][0] < 0.4:
-                    return Response({"success": False, "message": "Face already registered"}, status=409)
+                    return Response({
+                        "success": False,
+                        "status": "failed",
+                        "message": "Face already registered",
+                        "data": None
+                    }, status=409)
 
         except Exception as e:
             logger.warning(f"Chroma query failed: {str(e)}")
 
-        # -------- save --------
+        # Save face
         collection.add(
             ids=[str(employee_uuid)],
             embeddings=[embedding],
             metadatas=[{"employee_id": str(employee_uuid)}]
         )
+
         employee.face_verified = True
         employee.save()
-        return Response({"success": True, "message": "Face registered"}, status=201)
+
+        return Response({
+            "success": True,
+            "status": "success",
+            "message": "Face registered",
+            "data": {
+                "employee_id": str(employee_uuid)
+            }
+        }, status=201)
 
     except Exception as e:
         logger.exception(e)
-        return Response({"success": False, "error": str(e)}, status=500)  
-        
-        
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
-from rest_framework import status
+
+        return Response({
+            "success": False,
+            "status": "failed",
+            "message": "Internal server error",
+            "data": {
+                "error": str(e)
+            }
+        }, status=500)
 
 
-import uuid
-import logging
-from django.utils.timezone import now
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
-from rest_framework import status
+# =========================================================
+# LOCATION VERIFICATION
+# =========================================================
+class VerifyLocationView(APIView):
+    permission_classes = [AllowAny]
 
-from employees.models import Employee
-from .models import Attendance
-from .utils import model, read_image, collection,is_live
+    def post(self, request):
 
-logger = logging.getLogger(__name__)
+        company_id = request.data.get("company_id")
+        user_lat = request.data.get("latitude")
+        user_lon = request.data.get("longitude")
 
-# attendance/views.py
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework import status
-from django.utils.timezone import now
-import uuid
-import logging
+        if not all([company_id, user_lat, user_lon]):
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Missing required fields",
+                "data": None
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-logger = logging.getLogger(__name__)
+        # Fetch company
+        company = get_object_or_404(Company, company_id=company_id)
 
+        try:
+            location = company.work_location
+            check_if_enable = company.attendance_settings
+
+        except WorkLocation.DoesNotExist:
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Work location not configured for this company",
+                "data": None
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Geofencing disabled
+        if not check_if_enable.geo_fencing_enabled:
+            return Response({
+                "success": True,
+                "status": "success",
+                "message": "Location verification disabled",
+                "data": None
+            }, status=status.HTTP_200_OK)
+
+        # Calculate distance
+        distance = calculate_haversine_distance(
+            float(user_lat),
+            float(user_lon),
+            float(location.latitude),
+            float(location.longitude)
+        )
+
+        # Check range
+        is_within_range = distance <= location.radius_meters
+
+        if is_within_range:
+            return Response({
+                "success": True,
+                "status": "success",
+                "message": "Inside work perimeter",
+                "data": {
+                    "distance": round(distance, 2)
+                }
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            "success": False,
+            "status": "failed",
+            "message": "Outside work perimeter",
+            "data": {
+                "distance": round(distance, 2),
+                "radius_limit": location.radius_meters
+            }
+        }, status=status.HTTP_403_FORBIDDEN)
+
+
+# =========================================================
+# FACE RECOGNITION + ATTENDANCE
+# =========================================================
 @api_view(["POST"])
-@permission_classes([AllowAny]) 
+@permission_classes([AllowAny])
 def recognize(request):
+
     try:
-        file = request.FILES.get("file")
-        '''
-        # location data
-        latitude = request.data.get("latitude")
-        
-        longitude = request.data.get("longitude")
-        if not all([file,latitude, longitude]):
-            print('error:image required')
-            return Response({"success": False, "message": "Image and/or location data is not available"}, status=400)
-        '''    
-        # -------- Process Image & Get Embedding --------
-        
-        
-        
-        #
+        file = request.FILES.get("image")
+
+        if not file:
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Image is required",
+                "data": None
+            }, status=400)
+
+        # Process image
         try:
             img = read_image(file)
-           # Anti-spoof check
-            #if not is_live(img):
-                
-                #return Response({"message": "Spoof detected"}, status=403)
-        
-        # STEP 2: Face recognition (InsightFace)
-        
+
+            # if not is_live(img):
+            #     return Response({
+            #         "success": False,
+            #         "status": "failed",
+            #         "message": "Spoof detected",
+            #         "data": None
+            #     }, status=403)
+
         except Exception:
-            print('error:Invalid image')
-            print(Exception)
-            return Response({"success": False, "message": "Invalid image"}, status=400)
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Invalid image",
+                "data": None
+            }, status=400)
 
         faces = model.get(img)
+
         if len(faces) != 1:
-            print('error:')
-            return Response({"success": False, "message": "Please, just one face"}, status=400)
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Please, just one face",
+                "data": None
+            }, status=400)
 
         embedding = faces[0].embedding.tolist()
 
-        # -------- Search in Vector DB (Chroma) --------
+        # Search face DB
         try:
             results = collection.query(
                 query_embeddings=[embedding],
                 n_results=1
             )
+
         except Exception as e:
             logger.exception(e)
-            return Response({"success": False, "message": "Face database error"}, status=500)
 
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Face database error",
+                "data": {
+                    "error": str(e)
+                }
+            }, status=500)
+
+        # No face found
         if not results.get("ids") or not results["ids"][0]:
-            return Response({"success": False, "message": "No registered faces found"}, status=200) #issues with the status
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "No registered faces found",
+                "data": None
+            }, status=404)
 
         employee_id = results["ids"][0][0]
         distance = results["distances"][0][0]
 
         THRESHOLD = 0.6
+
+        # Face mismatch
         if distance > THRESHOLD:
             return Response({
                 "success": False,
+                "status": "failed",
                 "message": "Face not recognized",
-                "distance": round(distance, 4)
-            }, status=200)
+                "data": {
+                    "distance": round(distance, 4)
+                }
+            }, status=401)
 
-        # -------- Get Employee --------
+        # Validate employee UUID
         try:
             employee_uuid = uuid.UUID(str(employee_id))
-        except ValueError:
-            return Response({"success": False, "message": "Invalid employee ID"}, status=500)
 
+        except ValueError:
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Invalid employee ID",
+                "data": None
+            }, status=500)
+
+        # Fetch employee
         employee = Employee.objects.filter(
-            id=employee_uuid, 
+            id=employee_uuid,
             status="active"
         ).first()
 
         if not employee:
-            return Response({"success": False, "message": "Employee not found or inactive"}, status=404)
+            return Response({
+                "success": False,
+                "status": "failed",
+                "message": "Employee not found or inactive",
+                "data": None
+            }, status=404)
 
-        # Get company from employee
-        company = employee.company   # Assuming Employee has company = ForeignKey(Company)
+        company = employee.company
 
-        # -------- Subscription Check (Important for SaaS) --------
+        # Subscription check
         """
         subscription = getattr(company, 'subscription', None)
+
         if not subscription or not subscription.is_active:
             return Response({
                 "success": False,
-                "message": "Your subscription is inactive. Please upgrade your plan."
+                "status": "failed",
+                "message": "Subscription inactive",
+                "data": None
             }, status=403)
-            """
+        """
 
-        # -------- Smart Toggle Attendance Logic --------
         today = now().date()
         current_time = now().time()
 
-        # Use get_or_create properly
         attendance, created = Attendance.objects.get_or_create(
             employee=employee,
             date=today,
             defaults={
-                      # Required when creating
-                'clock_in': current_time,
-                'status': Attendance.StatusChoices.PRESENT,
+                "clock_in": current_time,
+                "status": Attendance.StatusChoices.PRESENT,
             }
         )
 
-        action = ""
+        # Attendance logic
         if created:
-            # First recognition today → Check In
+            success= True,
+            status = "success"
             action = "check_in"
             message = "Checked in successfully"
+
         else:
             if not attendance.clock_out:
-                # Second recognition → Check Out
                 attendance.clock_out = current_time
                 attendance.save()
+                success = True
+                status = "success"
                 action = "check_out"
                 message = "Checked out successfully"
+
             else:
-                # Already completed
+                success = False
+                status = "failed"
                 action = "already_completed"
                 message = "Attendance already completed for today"
 
         return Response({
-            "success": True,
-            "status": "verified",
-            "action": action,
+            "success": success,
+            "status": status,
             "message": message,
-            "name": employee.first_name,
-            "distance": round(distance, 4),
-            "clock_in": str(attendance.clock_in) if attendance.clock_in else None,
-            "clock_out": str(attendance.clock_out) if attendance.clock_out else None,
+            "data": {
+                "action": action,
+                "name": employee.first_name,
+                "distance": round(distance, 4),
+                "clock_in": str(attendance.clock_in) if attendance.clock_in else None,
+                "clock_out": str(attendance.clock_out) if attendance.clock_out else None,
+            }
         }, status=200)
 
     except Exception as e:
         logger.exception(e)
-        print()
+
         return Response({
             "success": False,
+            "status": "failed",
             "message": "Internal server error",
-            "error": str(e)
+            "data": {
+                "error": str(e)
+            }
         }, status=500)
 
 
@@ -454,9 +590,16 @@ class HolidayViewSet(viewsets.ModelViewSet):
 
         instance.delete()
 
-@api_view(["GET"])
-def attendance_view(request):
-    employee = Employee.objects.all().count()
-    
-    today_attendance = Attendance.objects.all().count()
-            
+
+
+class ShiftViewSet(viewsets.ModelViewSet):
+    serializer_class = ShiftSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = Shift.objects.all()
+
+class EmployeeShiftViewSet(viewsets.ModelViewSet):
+    serializer_class = EmployeeShiftSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return EmployeeShift.objects.filter(employee__company=self.request.user.company)

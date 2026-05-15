@@ -14,6 +14,8 @@ from appsettings.models import CompanySettings
 from employees.models import Employee
 from payroll.models import PayrollRun, Payslip
 from leave.models import LeaveRequest  # if you have it
+from attendance.models import Attendance
+
 
 class CompanyListView(generics.ListAPIView):
     serializer_class = CompanySerializer
@@ -39,6 +41,15 @@ def dashboard_stats(request):
         company_id=company_id,
         status="active"
     ).count()
+    
+    #Attendance
+    today_attendance = Attendance.objects.filter(
+            employee__company_id=company_id,
+            date=today
+        )
+        
+        
+    present_count = today_attendance.filter(status="present").count()
 
     # Payroll runs
     total_payroll = Payslip.objects.filter(
@@ -68,6 +79,7 @@ def dashboard_stats(request):
         "totalEmployees": total_employees,
         "activeLeaves": active_leaves,
         "totalPayroll": total_payroll,
+        "presentToday":present_count,
     })
     
     
