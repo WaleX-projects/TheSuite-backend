@@ -46,19 +46,19 @@ def preprocess(img):
 
 
 def is_live(file):
-    img = read_image(file)
-    input_tensor = preprocess(img)
+    
+    input_tensor = preprocess(file)
 
     outputs = session.run(
         None,
         {"input": input_tensor}
     )
-
+    print("output antisp offing issue",outputs)
     scores = outputs[0]
 
     # usually index 1 = "real face"
     real_score = scores[0][1]
-
+    print("spoffing score", real_score)
     return real_score > 0.5  
     
     

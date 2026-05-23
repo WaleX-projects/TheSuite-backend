@@ -1,6 +1,6 @@
 import uuid
 import logging
-from datetime import date
+from datetime import date,timedelta,datetime
 
 # Django Imports
 from django.shortcuts import get_object_or_404
@@ -88,14 +88,6 @@ class AttendanceViewSet(viewsets.ModelViewSet):
     
         require_feature(user.company, "attendance")
     
-        cache_key = f"attendance_dashboard_{user.company.id}_{today}"
-    
-        cached_data = cache.get(cache_key)
-    
-        # CACHE HIT
-        if cached_data:
-            return Response(cached_data)
-    
         # ================= DATABASE QUERIES =================
     
         company_employees = Employee.objects.filter(
@@ -141,9 +133,6 @@ class AttendanceViewSet(viewsets.ModelViewSet):
             "late_count": late_count,
             "absent_today_count": absent_count
         }
-    
-        # Cache for 5 minutes
-        cache.set(cache_key, data, timeout=300)
     
         return Response(data)
     
@@ -410,15 +399,16 @@ def recognize(request):
         try:
             img = read_image(file)
 
-            # if not is_live(img):
-            #     return Response({
-            #         "success": False,
-            #         "status": "failed",
-            #         "message": "Spoof detected",
-            #         "data": None
-            #     }, status=403)
+            if not is_live(img):
+                return Response({
+                     "success": False,
+                    "status": "failed",
+                     "message": "Spoof detected",
+                     "data": None
+                }, status=403)
 
-        except Exception:
+        except Exception as e:
+            print("error",e)
             return Response({
                 "success": False,
                 "status": "failed",
@@ -509,6 +499,12 @@ def recognize(request):
             }, status=404)
 
         company = employee.company
+        company_opening_time = company.attendance_settings.opening_time
+        allow_late_arrival = company.attendance_settings.allow_late_arrival
+        if allow_late_arrival:
+            late_arrival_grace = company.attendance_settings.late_arrival_grace_minutes
+        else:
+            late_arrival_grace = None    
 
         # Subscription check
         """
@@ -531,16 +527,26 @@ def recognize(request):
             date=today,
             defaults={
                 "clock_in": current_time,
-                "status": Attendance.StatusChoices.PRESENT,
             }
         )
 
         # Attendance logic
         if created:
-            success= True
-            status = "success"
-            action = "check_in"
-            message = "Checked in successfully"
+            # compare current time to that of the company opening and late arrival grace time to verify if an employee is late or not
+            if current_time > datatime.combine(company_opening_time,timedelta(minutes=late_arrival_grace)):
+                attendance.status = Attendance.StatusChoices.LATE
+                attendance.save()
+                success= True
+                status = "success"
+                action = "check_in"
+                message = "Checked in successfully(LATE)"
+            else:
+                attendance.status = Attendance.StatusChoices.PRESENT
+                attendance.save()
+                success= True
+                status = "success"
+                action = "check_in"
+                message = "Checked in successfully"
 
         else:
             if not attendance.clock_out:

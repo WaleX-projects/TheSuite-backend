@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Company,WorkLocation
+from .models import Company,WorkLocation,AttendanceSettings
 
 @admin.register(Company)
 class CompanyAdmin(admin.ModelAdmin):
@@ -8,4 +8,4 @@ class CompanyAdmin(admin.ModelAdmin):
     
     
 admin.site.register(WorkLocation)
-    
+admin.site.register(AttendanceSettings)   

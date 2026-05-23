@@ -65,7 +65,9 @@ class AttendanceSettings(models.Model):
         on_delete=models.CASCADE,
         related_name="attendance_settings"
     )
-
+    opening_time = models.TimeField(null=True,blank=True)
+    closing_time = models.TimeField(null=True,blank=True)
+    
     work_hours_per_day = models.PositiveIntegerField(default=8)
 
     allow_late_arrival = models.BooleanField(default=True)
