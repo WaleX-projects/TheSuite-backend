@@ -8,11 +8,45 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
 
-from .serializers import RegisterSerializer, UserSerializer
+from .serializers import RegisterSerializer, UserSerializer, PendoVisitorSerializer, PendoAccountSerializer
 from .utils import generate_verification_token, confirm_verification_token
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+
+def _build_pendo_metadata(user):
+    """Build Pendo visitor and account metadata for the given user."""
+    visitor_data = PendoVisitorSerializer(user).data
+
+    account_data = None
+    if user.company:
+        company = user.company
+        sub = getattr(company, 'subscription', None)
+        plan = sub.plan if sub else None
+        account_data = PendoAccountSerializer({
+            'id': str(company.pk),
+            'companyId': company.company_id,
+            'name': company.name,
+            'country': company.country,
+            'timezone': company.timezone,
+            'createdAt': company.created_at,
+            'subscriptionStatus': sub.status if sub else None,
+            'subscriptionPlanName': plan.name if plan else None,
+            'subscriptionPlanSlug': plan.slug if plan else None,
+            'subscriptionStartDate': sub.start_date if sub else None,
+            'subscriptionEndDate': sub.end_date if sub else None,
+            'subscriptionTrialEnd': sub.trial_end if sub else None,
+            'planHasAttendance': plan.has_attendance if plan else None,
+            'planHasLeave': plan.has_leave if plan else None,
+            'planHasPayroll': plan.has_payroll if plan else None,
+            'planMaxEmployees': plan.max_employees if plan else None,
+        }).data
+
+    result = {'visitor': visitor_data}
+    if account_data:
+        result['account'] = account_data
+    return result
 
 
 # ============================
@@ -149,6 +183,7 @@ class LoginView(APIView):
             "message": f"Login successful. Welcome {user.first_name or user.email}!",
             "refresh": str(refresh),
             "access": str(refresh.access_token),
+            "pendo": _build_pendo_metadata(user),
         }, status=status.HTTP_200_OK)
 
 
@@ -243,6 +278,21 @@ class PasswordResetView(APIView):
         user.save()
 
         return Response({"message": "Password reset successful"}, status=status.HTTP_200_OK)
+
+
+# ============================
+# PENDO METADATA
+# ============================
+class PendoMetadataView(APIView):
+    """
+    Return Pendo visitor and account metadata for the authenticated user.
+    The frontend calls this endpoint on page load to supply data to pendo.identify().
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(_build_pendo_metadata(request.user), status=status.HTTP_200_OK)
+
 
 '''from rest_framework.views import APIView
 from rest_framework.response import Response
