@@ -47,6 +47,7 @@ from attendance.services import AttendanceService
 
 # your payroll engine
 from .utils import PayrollService
+import pendo_track
 
 
 # ==========================================================
@@ -243,6 +244,17 @@ class PayrollRunViewSet(
             print("month",month,"year:",year)
             #payroll.process()
 
+            pendo_track.track(
+                "payroll_run_executed",
+                visitor_id=str(request.user.id),
+                account_id=str(company) if company else "system",
+                properties={
+                    "company_id": str(company) if company else "",
+                    "month": int(month) if month else 0,
+                    "year": int(year) if year else 0,
+                },
+            )
+
             return Response({
                 "message": "Payroll processed successfully"
             })
@@ -284,6 +296,19 @@ class PayrollRunViewSet(
 
         try:
             payroll.mark_paid()
+
+            pendo_track.track(
+                "payroll_marked_paid",
+                visitor_id=str(request.user.id),
+                account_id=str(payroll.company_id) if payroll.company_id else "system",
+                properties={
+                    "payroll_id": str(payroll.id),
+                    "company_id": str(payroll.company_id) if payroll.company_id else "",
+                    "month": payroll.month,
+                    "year": payroll.year,
+                    "payslip_count": payroll.payslips.count(),
+                },
+            )
 
             return Response({
                 "message": "Payroll marked as paid"
@@ -351,6 +376,20 @@ class PayrollRunViewSet(
         ] = f'attachment; filename="payroll_{payroll.month}_{payroll.year}.xlsx"'
 
         wb.save(response)
+
+        pendo_track.track(
+            "payroll_exported_excel",
+            visitor_id=str(request.user.id),
+            account_id=str(payroll.company_id) if payroll.company_id else "system",
+            properties={
+                "payroll_id": str(payroll.id),
+                "company_id": str(payroll.company_id) if payroll.company_id else "",
+                "month": payroll.month,
+                "year": payroll.year,
+                "payslip_count": payroll.payslips.count(),
+            },
+        )
+
         return response
 
 

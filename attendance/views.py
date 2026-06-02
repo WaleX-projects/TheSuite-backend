@@ -28,6 +28,7 @@ from .utils import model, read_image, collection, client, is_live, calculate_hav
 from employees.models import Employee
 from companies.models import Company, WorkLocation
 from subscriptions.utils import require_feature
+import pendo_track
 
     
     
@@ -255,6 +256,16 @@ def register(request):
         employee.face_verified = True
         employee.save()
 
+        pendo_track.track(
+            "face_registered",
+            visitor_id=str(employee_uuid),
+            account_id=str(employee.company_id) if employee.company_id else "system",
+            properties={
+                "employee_id": str(employee_uuid),
+                "company_id": str(employee.company_id) if employee.company_id else "",
+            },
+        )
+
         return Response({
             "success": True,
             "status": "success",
@@ -355,6 +366,18 @@ class VerifyLocationView(APIView):
         )
 
         is_within_range = distance <= company_data["radius"]
+
+        pendo_track.track(
+            "location_verified",
+            account_id=str(company_id),
+            properties={
+                "company_id": str(company_id),
+                "is_within_range": is_within_range,
+                "distance_meters": round(distance, 2),
+                "radius_limit": company_data["radius"],
+                "geo_fencing_enabled": company_data["geo_fencing_enabled"],
+            },
+        )
 
         if is_within_range:
             return Response({
@@ -548,6 +571,19 @@ def recognize(request):
                 action = "check_in"
                 message = "Checked in successfully"
 
+            pendo_track.track(
+                "attendance_checked_in",
+                visitor_id=str(employee.id),
+                account_id=str(company.id) if company else "system",
+                properties={
+                    "employee_id": str(employee.id),
+                    "company_id": str(company.id) if company else "",
+                    "attendance_status": str(attendance.status),
+                    "recognition_distance": round(distance, 4),
+                    "clock_in_time": str(current_time),
+                },
+            )
+
         else:
             if not attendance.clock_out:
                 attendance.clock_out = current_time
@@ -556,6 +592,19 @@ def recognize(request):
                 status = "success"
                 action = "check_out"
                 message = "Checked out successfully"
+
+                pendo_track.track(
+                    "attendance_checked_out",
+                    visitor_id=str(employee.id),
+                    account_id=str(company.id) if company else "system",
+                    properties={
+                        "employee_id": str(employee.id),
+                        "company_id": str(company.id) if company else "",
+                        "clock_in_time": str(attendance.clock_in),
+                        "clock_out_time": str(current_time),
+                        "recognition_distance": round(distance, 4),
+                    },
+                )
 
             else:
                 success = False
@@ -625,9 +674,21 @@ class HolidayViewSet(viewsets.ModelViewSet):
             )
 
         if is_global:
-            serializer.save(company=None, is_global=True)
+            holiday = serializer.save(company=None, is_global=True)
         else:
-            serializer.save(company=user.company, is_global=False)
+            holiday = serializer.save(company=user.company, is_global=False)
+
+        pendo_track.track(
+            "holiday_created",
+            visitor_id=str(user.id),
+            account_id=str(user.company_id) if user.company_id else "system",
+            properties={
+                "holiday_name": holiday.name if hasattr(holiday, "name") else "",
+                "date": str(holiday.date) if hasattr(holiday, "date") else "",
+                "is_global": is_global,
+                "company_id": str(user.company_id) if user.company_id else "",
+            },
+        )
 
     def perform_update(self, serializer):
         instance = self.get_object()

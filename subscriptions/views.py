@@ -13,6 +13,7 @@ from .serializers import (
     CreateSubscriptionSerializer,
     PlanSerializer
 )
+import pendo_track
 
 
 # ================= GET CURRENT SUBSCRIPTION =================
@@ -34,6 +35,22 @@ class SubscriptionDetailView(generics.RetrieveAPIView):
 class CreateSubscriptionView(generics.CreateAPIView):
     serializer_class = CreateSubscriptionSerializer
     permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        subscription = serializer.save()
+        user = self.request.user
+        pendo_track.track(
+            "subscription_created",
+            visitor_id=str(user.id),
+            account_id=str(user.company_id) if hasattr(user, "company_id") and user.company_id else "system",
+            properties={
+                "plan_id": str(subscription.plan_id) if subscription.plan_id else "",
+                "plan_name": str(subscription.plan.name) if hasattr(subscription, "plan") and subscription.plan else "",
+                "company_id": str(user.company_id) if hasattr(user, "company_id") and user.company_id else "",
+                "status": str(subscription.status) if hasattr(subscription, "status") else "",
+                "has_trial": bool(getattr(subscription, "trial_end", None)),
+            },
+        )
 
 
 # ================= UPGRADE SUBSCRIPTION =================
@@ -65,12 +82,30 @@ class UpgradeSubscriptionView(APIView):
             }
         )
 
+        previous_plan_id = None
         if not created:
+            previous_plan_id = str(sub.plan_id)
             sub.plan = plan
             sub.status = "active"
             sub.trial_end = None
             sub.end_date = now + timedelta(days=plan.duration_days)
             sub.save()
+
+        pendo_track.track(
+            "subscription_upgraded",
+            visitor_id=str(request.user.id),
+            account_id=str(company.id) if company else "system",
+            properties={
+                "previous_plan_id": previous_plan_id or "",
+                "new_plan_id": str(plan.id),
+                "new_plan_name": plan.name if hasattr(plan, "name") else "",
+                "company_id": str(company.id) if company else "",
+                "is_new_subscription": created,
+                "subscription_status": sub.status,
+                "duration_days": plan.duration_days if hasattr(plan, "duration_days") else 0,
+                "trial_days": plan.trial_days if hasattr(plan, "trial_days") else 0,
+            },
+        )
 
         return Response({
             "message": "Subscription updated successfully",

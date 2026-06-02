@@ -10,6 +10,7 @@ from django.contrib.auth import get_user_model
 
 from .serializers import RegisterSerializer, UserSerializer
 from .utils import generate_verification_token, confirm_verification_token
+import pendo_track
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -71,6 +72,15 @@ class RegisterView(APIView):
 
             logger.info("New user registered: %s", user.email)
 
+            pendo_track.track(
+                "user_registered",
+                visitor_id=str(user.id),
+                properties={
+                    "user_email_domain": user.email.split("@")[-1] if user.email else "",
+                    "referral_source": request.data.get("referral_source", ""),
+                },
+            )
+
             return Response(
                 {
                     "message": "Account created successfully. Please check your email to verify your account."
@@ -112,6 +122,12 @@ class VerifyEmailView(APIView):
         user.is_verified = True
         user.is_active = True
         user.save()
+
+        pendo_track.track(
+            "email_verified",
+            visitor_id=str(user.id),
+            account_id=str(user.company_id) if user.company_id else "system",
+        )
 
         return Response(
             {"message": "Email verified successfully. You can now login."},
@@ -213,6 +229,13 @@ class PasswordResetRequestView(APIView):
             fail_silently=False,
         )
 
+        pendo_track.track(
+            "password_reset_requested",
+            visitor_id=str(user.id),
+            account_id=str(user.company_id) if user.company_id else "system",
+            properties={"user_exists": True},
+        )
+
         return Response({"message": "Password reset email sent"}, status=status.HTTP_200_OK)
 
 
@@ -241,6 +264,12 @@ class PasswordResetView(APIView):
 
         user.set_password(password)
         user.save()
+
+        pendo_track.track(
+            "password_reset_completed",
+            visitor_id=str(user.id),
+            account_id=str(user.company_id) if user.company_id else "system",
+        )
 
         return Response({"message": "Password reset successful"}, status=status.HTTP_200_OK)
 
