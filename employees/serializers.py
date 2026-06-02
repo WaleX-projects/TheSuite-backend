@@ -7,6 +7,7 @@ from payroll.models import PositionSalary,SalaryComponent,PositionSalaryComponen
 from payroll.serializers import (PositionSalarySerializer,
         PositionSalaryComponentSerializer,
         SalaryComponentSerializer)
+import pendo_track
 
         
 class DepartmentSerializer(serializers.ModelSerializer):
@@ -105,6 +106,21 @@ class PositionSerializer(serializers.ModelSerializer):
                 component=component,
                 value=comp["value"]   # ✅ value should be here (IMPORTANT)
             )
+
+        request = self.context.get("request")
+        pendo_track.track(
+            "position_created",
+            visitor_id=str(request.user.id) if request else "system",
+            account_id=str(company.id) if company else "system",
+            properties={
+                "position_title": position.title,
+                "department_id": str(position.department_id) if position.department_id else "",
+                "basic_salary": str(basic_salary),
+                "component_count": len(components_data),
+                "company_id": str(company.id) if company else "",
+                "is_single_role": getattr(position, "is_single_role", False),
+            },
+        )
 
         return position
     

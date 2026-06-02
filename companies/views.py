@@ -11,6 +11,7 @@ from .models import Company, CompanySettings
 from .serializers import CompanySerializer, CompanySettingsSerializer
 
 from appsettings.models import CompanySettings
+import pendo_track
 from employees.models import Employee
 from payroll.models import PayrollRun, Payslip
 from leave.models import LeaveRequest  # if you have it
@@ -144,6 +145,17 @@ class CompanySettingsView(APIView):
         if serializer.is_valid():
             serializer.save()
 
+            pendo_track.track(
+                "company_settings_updated",
+                visitor_id=str(request.user.id),
+                account_id=str(request.user.company_id) if request.user.company_id else "system",
+                properties={
+                    "company_id": str(request.user.company_id) if request.user.company_id else "",
+                    "changed_fields": ",".join(request.data.keys()),
+                    "update_type": "full",
+                },
+            )
+
             return Response(
                 serializer.data,
                 status=status.HTTP_200_OK
@@ -166,6 +178,17 @@ class CompanySettingsView(APIView):
         if serializer.is_valid():
             serializer.save()
 
+            pendo_track.track(
+                "company_settings_updated",
+                visitor_id=str(request.user.id),
+                account_id=str(request.user.company_id) if request.user.company_id else "system",
+                properties={
+                    "company_id": str(request.user.company_id) if request.user.company_id else "",
+                    "changed_fields": ",".join(request.data.keys()),
+                    "update_type": "partial",
+                },
+            )
+
             return Response(
                 serializer.data,
                 status=status.HTTP_200_OK
@@ -175,8 +198,8 @@ class CompanySettingsView(APIView):
             serializer.errors,
             status=status.HTTP_400_BAD_REQUEST
         )
-        
-        
+
+
 # views.py
 
 from rest_framework.views import APIView
@@ -221,13 +244,23 @@ class AttendanceSettingsView(APIView):
         if serializer.is_valid():
             serializer.save()
 
+            pendo_track.track(
+                "attendance_settings_updated",
+                visitor_id=str(request.user.id),
+                account_id=str(request.user.company_id) if request.user.company_id else "system",
+                properties={
+                    "company_id": str(request.user.company_id) if request.user.company_id else "",
+                    "changed_fields": ",".join(request.data.keys()),
+                },
+            )
+
             return Response(serializer.data)
 
         return Response(
             serializer.errors,
             status=status.HTTP_400_BAD_REQUEST
-        ) 
-        
+        )
+
 # views.py
 
 from rest_framework.views import APIView
@@ -272,13 +305,23 @@ class PayrollSettingsView(APIView):
         if serializer.is_valid():
             serializer.save()
 
+            pendo_track.track(
+                "payroll_settings_updated",
+                visitor_id=str(request.user.id),
+                account_id=str(request.user.company_id) if request.user.company_id else "system",
+                properties={
+                    "company_id": str(request.user.company_id) if request.user.company_id else "",
+                    "changed_fields": ",".join(request.data.keys()),
+                },
+            )
+
             return Response(serializer.data)
 
         return Response(
             serializer.errors,
             status=status.HTTP_400_BAD_REQUEST
-        ) 
-        
+        )
+
 # views.py
 
 from rest_framework.views import APIView
@@ -323,13 +366,23 @@ class LeaveSettingsView(APIView):
         if serializer.is_valid():
             serializer.save()
 
+            pendo_track.track(
+                "leave_settings_updated",
+                visitor_id=str(request.user.id),
+                account_id=str(request.user.company_id) if request.user.company_id else "system",
+                properties={
+                    "company_id": str(request.user.company_id) if request.user.company_id else "",
+                    "changed_fields": ",".join(request.data.keys()),
+                },
+            )
+
             return Response(serializer.data)
 
         return Response(
             serializer.errors,
             status=status.HTTP_400_BAD_REQUEST
-        )  
-        
+        )
+
 # views.py
 
 from rest_framework.views import APIView
@@ -424,9 +477,21 @@ class WorkLocationView(APIView):
 
         if serializer.is_valid():
             serializer.save()
+
+            pendo_track.track(
+                "work_location_updated",
+                visitor_id=str(request.user.id),
+                account_id=str(request.user.company_id) if request.user.company_id else "system",
+                properties={
+                    "company_id": str(request.user.company_id) if request.user.company_id else "",
+                    "has_coordinates": bool(request.data.get("latitude") and request.data.get("longitude")),
+                    "radius_meters": float(request.data.get("radius_meters", 0)) if request.data.get("radius_meters") else 0,
+                },
+            )
+
             return Response(serializer.data)
 
         return Response(
             serializer.errors,
             status=status.HTTP_400_BAD_REQUEST
-        )                                   
+        )

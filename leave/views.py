@@ -21,6 +21,7 @@ from .serializers import (
     LeaveApprovalLogSerializer,
     LeavePolicySerializer
 )
+import pendo_track
 
 
 # ==========================================
@@ -45,8 +46,27 @@ class LeaveBalanceViewSet(viewsets.ModelViewSet):
 class LeaveRequestViewSet(viewsets.ModelViewSet):
     queryset = LeaveRequest.objects.all()
     serializer_class = LeaveRequestSerializer
-    
-    
+
+    def perform_create(self, serializer):
+        leave = serializer.save()
+        user = self.request.user
+        employee = getattr(leave, "employee", None)
+        duration_days = None
+        if hasattr(leave, "start_date") and hasattr(leave, "end_date") and leave.start_date and leave.end_date:
+            duration_days = (leave.end_date - leave.start_date).days + 1
+        pendo_track.track(
+            "leave_request_submitted",
+            visitor_id=str(user.id),
+            account_id=str(user.company_id) if hasattr(user, "company_id") and user.company_id else "system",
+            properties={
+                "leave_type": str(leave.leave_type) if hasattr(leave, "leave_type") else "",
+                "start_date": str(leave.start_date) if hasattr(leave, "start_date") else "",
+                "end_date": str(leave.end_date) if hasattr(leave, "end_date") else "",
+                "duration_days": duration_days or 0,
+                "employee_id": str(employee.id) if employee else "",
+                "company_id": str(user.company_id) if hasattr(user, "company_id") and user.company_id else "",
+            },
+        )
 
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
@@ -61,6 +81,23 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             leave_request=leave,
             action="approved",
             action_by=request.user
+        )
+
+        employee = getattr(leave, "employee", None)
+        duration_days = None
+        if hasattr(leave, "start_date") and hasattr(leave, "end_date") and leave.start_date and leave.end_date:
+            duration_days = (leave.end_date - leave.start_date).days + 1
+        pendo_track.track(
+            "leave_request_approved",
+            visitor_id=str(request.user.id),
+            account_id=str(request.user.company_id) if hasattr(request.user, "company_id") and request.user.company_id else "system",
+            properties={
+                "leave_request_id": str(leave.id),
+                "leave_type": str(leave.leave_type) if hasattr(leave, "leave_type") else "",
+                "approved_by": str(request.user.id),
+                "employee_id": str(employee.id) if employee else "",
+                "duration_days": duration_days or 0,
+            },
         )
 
         return Response({"message": "Leave approved"})
@@ -81,6 +118,20 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             note=leave.rejection_reason
         )
 
+        employee = getattr(leave, "employee", None)
+        pendo_track.track(
+            "leave_request_rejected",
+            visitor_id=str(request.user.id),
+            account_id=str(request.user.company_id) if hasattr(request.user, "company_id") and request.user.company_id else "system",
+            properties={
+                "leave_request_id": str(leave.id),
+                "leave_type": str(leave.leave_type) if hasattr(leave, "leave_type") else "",
+                "rejected_by": str(request.user.id),
+                "employee_id": str(employee.id) if employee else "",
+                "has_rejection_reason": bool(leave.rejection_reason),
+            },
+        )
+
         return Response({"message": "Leave rejected"})
 
 
@@ -98,6 +149,19 @@ class LeaveApprovalLogViewSet(viewsets.ReadOnlyModelViewSet):
 class LeavePolicyViewSet(viewsets.ModelViewSet):
     queryset = LeavePolicy.objects.all()
     serializer_class = LeavePolicySerializer
+
+    def perform_create(self, serializer):
+        policy = serializer.save()
+        user = self.request.user
+        pendo_track.track(
+            "leave_policy_created",
+            visitor_id=str(user.id),
+            account_id=str(user.company_id) if hasattr(user, "company_id") and user.company_id else "system",
+            properties={
+                "policy_name": str(policy) if policy else "",
+                "company_id": str(user.company_id) if hasattr(user, "company_id") and user.company_id else "",
+            },
+        )
     
     
     

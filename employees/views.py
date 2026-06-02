@@ -28,6 +28,7 @@ from django.conf import settings
 from django.db.models import Count, Sum, DecimalField
 from django.db.models.functions import Coalesce
 from rest_framework import viewsets
+import pendo_track
 
 class PositionViewSet(viewsets.ModelViewSet):
     serializer_class = PositionSerializer
@@ -84,9 +85,19 @@ class DepartmentViewSet(viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
-        serializer.save(company=self.request.user.company)
+        department = serializer.save(company=self.request.user.company)
 
-        
+        pendo_track.track(
+            "department_created",
+            visitor_id=str(self.request.user.id),
+            account_id=str(self.request.user.company_id) if self.request.user.company_id else "system",
+            properties={
+                "department_name": department.name,
+                "company_id": str(self.request.user.company_id) if self.request.user.company_id else "",
+            },
+        )
+
+
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
@@ -123,17 +134,29 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     company=user.company
 )
     def perform_create(self, serializer):
-        
+
         user = self.request.user
         company = user.company
-        
+
         check_employee_limit(company)
-        
-        
+
+
         if not user.company and not user.is_superuser:
             raise PermissionDenied("No company assigned")
 
-        serializer.save(company=user.company)
+        employee = serializer.save(company=user.company)
+
+        pendo_track.track(
+            "employee_created",
+            visitor_id=str(user.id),
+            account_id=str(company.id) if company else "system",
+            properties={
+                "department": str(employee.department_id) if employee.department_id else "",
+                "position": str(employee.position_id) if employee.position_id else "",
+                "has_bank_info": bool(employee.bank_account_number),
+                "company_id": str(company.id) if company else "",
+            },
+        )
         
         
     def update(self, request, *args, **kwargs):
@@ -158,7 +181,17 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
             employee.status = "active"
             employee.save()
-    
+
+            pendo_track.track(
+                "employee_activated",
+                visitor_id=str(request.user.id),
+                account_id=str(employee.company_id) if employee.company_id else "system",
+                properties={
+                    "employee_id": str(employee.id),
+                    "company_id": str(employee.company_id) if employee.company_id else "",
+                },
+            )
+
             return Response(
                 {"message": "Employee activated successfully"},
                 status=status.HTTP_200_OK
@@ -177,7 +210,17 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             
             employee.status = "deactivated"   # or "inactive" if you prefer
             employee.save()
-    
+
+            pendo_track.track(
+                "employee_deactivated",
+                visitor_id=str(request.user.id),
+                account_id=str(employee.company_id) if employee.company_id else "system",
+                properties={
+                    "employee_id": str(employee.id),
+                    "company_id": str(employee.company_id) if employee.company_id else "",
+                },
+            )
+
             return Response(
                 {"message": "Employee deactivated successfully"},
                 status=status.HTTP_200_OK
@@ -268,6 +311,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
     
+            pendo_track.track(
+                "bank_account_resolved",
+                visitor_id=str(request.user.id),
+                account_id=str(request.user.company_id) if request.user.company_id else "system",
+                properties={
+                    "bank_code": bank_code,
+                    "company_id": str(request.user.company_id) if request.user.company_id else "",
+                },
+            )
+
             return Response({
                 "account_name": data["data"]["account_name"]
             })
@@ -316,6 +369,22 @@ class BulkEmployeeCreateView(APIView):
             try:
                 result = serializer.save()
                 print("Bulk upload successful:", result)
+
+                uploaded_file = request.FILES.get("file")
+                file_ext = uploaded_file.name.rsplit(".", 1)[-1].lower() if uploaded_file else ""
+                pendo_track.track(
+                    "employee_bulk_uploaded",
+                    visitor_id=str(request.user.id),
+                    account_id=str(request.user.company_id) if request.user.company_id else "system",
+                    properties={
+                        "file_type": file_ext,
+                        "employees_created": result.get("employees_created", 0),
+                        "had_errors": False,
+                        "error_count": 0,
+                        "company_id": str(request.user.company_id) if request.user.company_id else "",
+                    },
+                )
+
                 return Response(result, status=201)
             except Exception as e:
                 print("🔥 ERROR DURING SAVE:", str(e))
